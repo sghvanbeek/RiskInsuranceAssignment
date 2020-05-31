@@ -1,0 +1,315 @@
+---
+title: "Ultimate"
+author: "Sander van Beek"
+date: "16-5-2020"
+output: pdf_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###############
+# Intialising #
+###############
+
+```{r setup, include = FALSE}
+require("ggplot2")
+```
+
+```{r}
+default_states <- 25            # The number of states in the model
+default_steps <- 4              # The number of states one descends after a claim
+default_prob  <- 0.05           # Average claim frequency
+default_gamma <- 4              # Parameter used for the gamma distribution
+default_infinitesimal <- 1e-10  # Parameter used for the Loimaranta efficiency
+```
+
+#############
+# Functions #
+#############
+
+```{r}
+poisson_probabilities <- function(lambda, states = default_states) {
+  result <- c()
+  
+  for (k in 0:(states - 1)) {
+    result <- c(result, dpois(k, lambda))
+  }
+  
+  return(result)
+}
+```
+
+```{r}
+mat_row <- function(pos, lambda, states = default_states, steps = default_steps) {
+  prob <- poisson_probabilities(lambda)
+  cum_prob <- cumsum(prob)
+  zero <- states - pos - 1
+  vec <- c()
+  rem <- states
+  
+  if (zero == -1) {
+    vec <- c(vec, prob[1])
+    rem <- rem - 1
+  } else {
+    vec <- c(vec, rep(0, zero), prob[1])
+    rem <- rem - zero - 1
+    
+    if (zero != states - 2) {
+      vec <- c(vec, 0)
+      rem <- rem - 1
+    }
+  }
+  
+  counter <- 1
+  while (rem > steps) {
+    counter <- counter + 1
+    vec <- c(vec, rep(0, steps - 1), prob[counter])
+    rem <- rem - steps
+  }
+  
+  if (rem != 0) {
+    vec <- c(vec, rep(0, rem - 1), 1 - cum_prob[counter])
+  }
+  
+  return(rev(vec))
+}
+```
+
+```{r}
+mat <- function(lambda, states = default_states) {
+  mat <- matrix(nrow = states, ncol = states)
+  
+  for (i in 1:states) {
+    mat[i,] <- mat_row(i, lambda)
+  }
+  
+  return(mat)
+}
+```
+
+```{r}
+steady_states <- function(lambda) {
+  eig <- eigen(t(mat(lambda)))
+  steady_states <- as.numeric(eig$vectors[, 1] / sum(eig$vectors[, 1]))
+  return(steady_states)
+}
+```
+
+```{r}
+steady_state <- function(lambda, k) {
+  results <- c()
+  
+  for (i in 1:length(lambda)) {
+    results <- c(results, steady_states(lambda[i])[k])
+  }
+
+  return(results)
+}
+```
+
+```{r}
+upper <- function(k, shape = default_shape, rate = default_shape, prob = default_prob) {
+  return(integrate(function(x) x * steady_state(prob * x, k) * dgamma(x, shape = shape, rate = rate), 0, Inf, subdivisions = 100L)$value)
+}
+```
+
+```{r}
+lower <- function(k, shape = default_shape, rate = default_shape, prob = default_prob) {
+  return(integrate(function(x) steady_state(prob * x, k) * dgamma(x, shape = shape, rate = rate), 0, Inf, subdivisions = 100L)$value)
+}
+```
+
+```{r}
+r <- function(k) {
+  return(upper(k) / lower(k))
+}
+```
+
+```{r}
+upper <- function(k, shape = default_gamma, rate = default_gamma, prob = default_prob) {
+  return(integrate(function(x) x * steady_state(prob * x, k) * dgamma(x, shape = shape, rate = rate), 0, Inf, subdivisions = 100L)$value)
+}
+```
+
+```{r}
+lower <- function(k, shape = default_gamma, rate = default_gamma, prob = default_prob) {
+  return(integrate(function(x) steady_state(prob * x, k) * dgamma(x, shape = shape, rate = rate), 0, Inf, subdivisions = 100L)$value)
+}
+```
+
+```{r}
+r <- function(k) {
+  return(upper(k) / lower(k))
+}
+```
+
+```{r}
+premiums <- function(states = default_states) {
+  result <- c()
+  
+  for (k in 1:states) {
+    result <- c(result, r(k))
+  }
+  
+  return(result)
+}
+```
+
+```{r}
+steady_state_premiums <- premiums()
+loimaranta_efficiency <- function(lambda, premiums = steady_state_premiums, infinitesimal = default_infinitesimal) {
+  steady_state_premium <- sum(steady_states(lambda) * premiums)
+  steady_state_premium_new <- sum(steady_states(lambda + infinitesimal) * premiums)
+  
+  result <- (log(steady_state_premium_new) - log(steady_state_premium)) / (log(lambda + infinitesimal) - log(lambda))
+  return(result)
+}
+```
+
+################
+# Calculations #
+################
+
+## Assume that the number of claims in a year is Poisson distributed with
+## parameter \lambda. For your system, answer the following questions for
+## \lambda = 0.05.
+
+```{r}
+lambda <- 0.05
+```
+
+# a) Calculate the transition matrix P and obtain the steady-state distribution.
+
+```{r}
+# Transition matrix
+mat(lambda)
+
+# Steady-state distribution
+steady_states(lambda)
+```
+
+# b) Obtain the steady-state premium.
+
+```{r}
+steady_state_premiums <- premiums()
+steady_state_premiums
+```
+
+# c) Calculate the Loimaranta efficiency. Use at least two different methods to
+#    numerically calculate the Loimaranta efficiency and compare the outcomes
+#    of these methods. Is the system efficient for this value of \lambda? Explain.
+
+```{r}
+loimaranta_efficiency(lambda, steady_state_premiums)
+```
+
+# d) How does the Loimaranta efficiency depend on \lambda? Make a nice graph,
+#    describe what it shows you and try to find an explanation for the patterns
+#    that you see. Make the graph as nice as possible.
+
+```{r}
+ggplot(data = data.frame(x = 0), mapping = aes(x = x)) +
+  stat_function(fun = Vectorize(loimaranta_efficiency), colour = "red") +
+  theme_bw() + theme(panel.grid = element_blank(), panel.grid.major.y = element_line(size = .1, color = "black")) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.2)) +
+  xlim(0, 1) + xlab("λ") + ylab("Loimaranta efficiency")
+```
+
+# e) Compare the efficiency of this bonus malus system to the Dutch system.
+#    Note that a visual comparison (based on a graph) is an excellent way to
+#    answer this question. Try again to make the graphs as nice as possible
+#    (using colors etc).
+
+```{r}
+dutch_mat <- function(lambda) {
+  prob <- poisson_probabilities(lambda)
+  cum_prob <- cumsum(prob)
+  
+  matrix(c(1 - cum_prob[1], prob[1], rep(0, 12),
+           1 - cum_prob[1], 0, prob[1], rep(0, 11),
+           1 - cum_prob[1], 0, 0, prob[1], rep(0, 10),
+           1 - cum_prob[1], 0, 0, 0, prob[1], rep(0, 9),
+           1 - cum_prob[2], prob[2], 0, 0, 0, prob[1], rep(0, 8),
+           1 - cum_prob[2], 0, prob[2], 0, 0, 0, prob[1], rep(0, 7),
+           1 - cum_prob[2], 0, 0, prob[2], 0, 0, 0, prob[1], rep(0, 6),
+           1 - cum_prob[2], 0, 0, 0, prob[2], 0, 0, 0, prob[1], rep(0, 5),
+           1 - cum_prob[3], prob[3], 0, 0, 0, prob[2], 0, 0, 0, prob[1], rep(0, 4),
+           1 - cum_prob[3], 0, prob[3], 0, 0, 0, prob[2], 0, 0, 0, prob[1], rep(0, 3),
+           1 - cum_prob[3], 0, prob[3], 0, 0, 0, prob[2], 0, 0, 0, 0, prob[1], rep(0, 2),
+           1 - cum_prob[3], 0, 0, prob[3], 0, 0, 0, prob[2], 0, 0, 0, 0, prob[1], rep(0, 1),
+           1 - cum_prob[3], 0, 0, prob[3], 0, 0, 0, prob[2], 0, 0, 0, 0, 0, prob[1],
+           1 - cum_prob[3], 0, 0, 0, prob[3], 0, 0, 0, prob[2], 0, 0, 0, 0, prob[1]),
+          nrow = 14, ncol = 14, byrow = TRUE)
+}
+```
+
+```{r}
+dutch_steady_states <- function(lambda) {
+  eig <- eigen(t(dutch_mat(lambda)))
+  steady_states <- as.numeric(eig$vectors[, 1] / sum(eig$vectors[, 1]))
+  return(steady_states)
+}
+```
+
+```{r}
+dutch_steady_state_premium <- function(lambda) {
+  steady_states <- dutch_steady_states(lambda)
+  percentages <- c(120, 100, 90, 80, 70, 60, 55, 50, 45, 50, 37.5, 35, 32.5, 30)
+  
+  return(sum(steady_states * percentages))
+}
+```
+
+```{r}
+dutch_loimaranta_efficiency <- function(lambda, infinitesimal = default_infinitesimal) {
+  steady_state_premium <- dutch_steady_state_premium(lambda)
+  steady_state_premium_new <- dutch_steady_state_premium(lambda + infinitesimal)
+  
+  result <- (log(steady_state_premium_new) - log(steady_state_premium)) / (log(lambda + infinitesimal) - log(lambda))
+  
+  return(result)
+}
+```
+
+```{r}
+ggplot(data = data.frame(x = 0)) +
+  stat_function(aes_(colour = "Our model"), fun = Vectorize(loimaranta_efficiency)) +
+  stat_function(aes_(colour = "Dutch model"), fun = Vectorize(dutch_loimaranta_efficiency)) +
+  theme_bw() + theme(panel.grid = element_blank(), panel.grid.major.y = element_line(size = 0.1, color = "black")) +
+  scale_y_continuous(limits = c(0, 1.2), breaks = seq(0, 1.2, by = 0.2)) +
+  xlim(0, 1) + xlab("λ") + ylab("Loimaranta efficiency") + labs(color = "Model") 
+```
+
+##########
+# Other  #
+##########
+
+```{r}
+default_entry_step <- 6
+```
+
+```{r}
+standardized_premiums <- function(states = default_states, entry = default_entry_step) {
+  result <- c()
+  
+  for (k in 1:states) {
+    result <- c(result, r(k))
+  }
+  
+  return(result / result[entry])
+}
+```
+
+```{r}
+standardized_premiums()
+```
+
+```{r}
+ggplot(data = data.frame(x = 0)) +
+  stat_function(fun = dgamma, args = list(default_gamma, default_gamma / default_prob), colour = "red") +theme_bw() +
+  theme(panel.grid = element_blank()) +
+  scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, by = 5)) +
+  xlim(0, 0.25) + xlab("x") + ylab("f(x)")
+```
