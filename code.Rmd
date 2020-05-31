@@ -19,9 +19,9 @@ require("ggplot2")
 
 ```{r}
 default_states <- 25            # The number of states in the model
-default_steps <- 4              # The number of states one descends after a claim
+default_steps <- 5              # The number of states one descends after a claim
 default_prob  <- 0.05           # Average claim frequency
-default_gamma <- 4              # Parameter used for the gamma distribution
+default_gamma <- 2              # Parameter used for the gamma distribution
 default_infinitesimal <- 1e-10  # Parameter used for the Loimaranta efficiency
 ```
 
@@ -158,12 +158,12 @@ premiums <- function(states = default_states) {
 ```
 
 ```{r}
-steady_state_premiums <- premiums()
-loimaranta_efficiency <- function(lambda, premiums = steady_state_premiums, infinitesimal = default_infinitesimal) {
-  steady_state_premium <- sum(steady_states(lambda) * premiums)
+calculated_premiums <- premiums()
+loimaranta_efficiency <- function(lambda, premiums = calculated_premiums, infinitesimal = default_infinitesimal) {
+  steady_state_premium_old <- sum(steady_states(lambda) * premiums)
   steady_state_premium_new <- sum(steady_states(lambda + infinitesimal) * premiums)
   
-  result <- (log(steady_state_premium_new) - log(steady_state_premium)) / (log(lambda + infinitesimal) - log(lambda))
+  result <- (log(steady_state_premium_new) - log(steady_state_premium_old)) / (log(lambda + infinitesimal) - log(lambda))
   return(result)
 }
 ```
@@ -193,8 +193,8 @@ steady_states(lambda)
 # b) Obtain the steady-state premium.
 
 ```{r}
-steady_state_premiums <- premiums()
-steady_state_premiums
+calculated_premiums <- premiums()
+sum(steady_states(lambda) * calculated_premiums)
 ```
 
 # c) Calculate the Loimaranta efficiency. Use at least two different methods to
@@ -202,7 +202,30 @@ steady_state_premiums
 #    of these methods. Is the system efficient for this value of \lambda? Explain.
 
 ```{r}
-loimaranta_efficiency(lambda, steady_state_premiums)
+loimaranta_efficiency_second_method <- function(lambda, infinitesimal = default_infinitesimal) {
+  mat_old <- mat(0.05 - infinitesimal)
+  mat_new <- mat(0.05 + infinitesimal)
+  
+  for (i in 1:10) {
+    mat_old <- mat_old %*% mat_old
+    mat_new <- mat_new %*% mat_new
+  }
+  
+  premiums <- premiums()
+  steady_state_old <- as.vector(mat_old[1,])
+  steady_state_new <- as.vector(mat_new[1,])
+  steady_state_premium_old <- sum(steady_state_old * premiums)
+  steady_state_premium_new <- sum(steady_state_new * premiums)
+  
+  result <- (log(steady_state_premium_new) - log(steady_state_premium_old)) / (log(lambda + infinitesimal) - log(lambda - infinitesimal))
+  return(result)
+}
+```
+
+```{r}
+# Differences are minimal, so we will not discuss this in the report
+loimaranta_efficiency(lambda, calculated_premiums)
+loimaranta_efficiency_second_method(lambda)
 ```
 
 # d) How does the Loimaranta efficiency depend on \lambda? Make a nice graph,
@@ -213,7 +236,7 @@ loimaranta_efficiency(lambda, steady_state_premiums)
 ggplot(data = data.frame(x = 0), mapping = aes(x = x)) +
   stat_function(fun = Vectorize(loimaranta_efficiency), colour = "red") +
   theme_bw() + theme(panel.grid = element_blank(), panel.grid.major.y = element_line(size = .1, color = "black")) +
-  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.2)) +
+  scale_y_continuous(limits = c(0, 1.2), breaks = seq(0, 1.2, by = 0.2)) +
   xlim(0, 1) + xlab("λ") + ylab("Loimaranta efficiency")
 ```
 
@@ -264,10 +287,10 @@ dutch_steady_state_premium <- function(lambda) {
 
 ```{r}
 dutch_loimaranta_efficiency <- function(lambda, infinitesimal = default_infinitesimal) {
-  steady_state_premium <- dutch_steady_state_premium(lambda)
+  steady_state_premium_old <- dutch_steady_state_premium(lambda)
   steady_state_premium_new <- dutch_steady_state_premium(lambda + infinitesimal)
   
-  result <- (log(steady_state_premium_new) - log(steady_state_premium)) / (log(lambda + infinitesimal) - log(lambda))
+  result <- (log(steady_state_premium_new) - log(steady_state_premium_old)) / (log(lambda + infinitesimal) - log(lambda))
   
   return(result)
 }
@@ -279,7 +302,9 @@ ggplot(data = data.frame(x = 0)) +
   stat_function(aes_(colour = "Dutch model"), fun = Vectorize(dutch_loimaranta_efficiency)) +
   theme_bw() + theme(panel.grid = element_blank(), panel.grid.major.y = element_line(size = 0.1, color = "black")) +
   scale_y_continuous(limits = c(0, 1.2), breaks = seq(0, 1.2, by = 0.2)) +
-  xlim(0, 1) + xlab("λ") + ylab("Loimaranta efficiency") + labs(color = "Model") 
+  xlim(0, 1) + xlab("λ") + ylab("Loimaranta efficiency") + labs(color = "Model")
+
+ggsave("comparison.png", width = 7, height = 5)
 ```
 
 ##########
@@ -310,6 +335,8 @@ standardized_premiums()
 ggplot(data = data.frame(x = 0)) +
   stat_function(fun = dgamma, args = list(default_gamma, default_gamma / default_prob), colour = "red") +theme_bw() +
   theme(panel.grid = element_blank()) +
-  scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, by = 5)) +
+  scale_y_continuous(limits = c(0, 15), breaks = seq(0, 15, by = 5)) +
   xlim(0, 0.25) + xlab("x") + ylab("f(x)")
+
+ggsave("gamma.png", width = 7, height = 5)
 ```
